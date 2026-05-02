@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PPDB Online - SMK Negeri 1 Makassar</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #0d6efd;
+            --success: #198754;
+            --warning: #ffc107;
+            --danger: #dc3545;
+        }
+        body {
+            background: #f4f7fc;
+            font-family: 'Segoe UI', sans-serif;
+            transition: all 0.3s;
+        }
+        .navbar-brand {
+            font-weight: bold;
+            color: white !important;
+        }
+        .sidebar {
+            background: linear-gradient(180deg, #0d47a1, #1565c0);
+            color: white;
+            min-height: calc(100vh - 56px);
+            padding-top: 20px;
+            box-shadow: 2px 0 8px rgba(0,0,0,0.1);
+        }
+        .sidebar .nav-link {
+            color: rgba(255,255,255,0.85);
+            border-radius: 8px;
+            margin: 4px 10px;
+            padding: 10px 15px;
+            transition: 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.95rem;
+        }
+        .sidebar .nav-link:hover, .sidebar .nav-link.active {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            font-weight: 600;
+        }
+        .main-content {
+            padding: 25px;
+            background: white;
+            border-radius: 12px;
+            margin: 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+            min-height: 80vh;
+        }
+        .btn-action {
+            margin: 3px;
+            font-size: 0.9rem;
+            border-radius: 6px;
+        }
+        .card-stat {
+            border-left: 5px solid var(--primary);
+            transition: 0.2s;
+        }
+        .table-verifikasi th {
+            background-color: #e9f0ff;
+        }
+        @media print {
+            .sidebar, .navbar, .no-print {
+                display: none !important;
+            }
+            .main-content {
+                box-shadow: none;
+                margin: 0;
+                padding: 0;
+            }
+        }
+        .status-badge {
+            font-size: 0.8rem;
+            padding: 4px 12px;
+            border-radius: 20px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">📚 PPDB ONLINE</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item" id="btnLoginNav"><a class="nav-link" href="#" onclick="navigate('login')">🔑 Login</a></li>
+                    <li class="nav-item" id="btnRegNav"><a class="nav-link" href="#" onclick="navigate('register')">📝 Daftar</a></li>
+                    <li class="nav-item" id="btnLogout" style="display:none;"><a class="nav-link" href="#" onclick="logout()">🚪 Logout</a></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar (dinamis berdasarkan peran) -->
+            <div class="col-md-3 col-lg-2 sidebar d-none d-md-block" id="sidebarMenu">
+                <ul class="nav flex-column" id="menuList">
+                    <!-- Menu akan diisi dinamis oleh JavaScript -->
+                </ul>
+            </div>
+            
+            <!-- Main Content -->
+            <main class="col-md-9 col-lg-10" id="mainContent">
+                <div class="main-content" id="dynamicContent">
+                    <!-- Halaman akan dimuat di sini -->
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // ==========================================
+        // GLOBAL STATE & STORAGE
+        // ==========================================
+        let currentUser = null; // { username, role, data... }
+        let currentPage = 'beranda';
+        
+        // Inisialisasi data dummy admin & contoh
+        if(!localStorage.getItem('ppdb_users')) {
+            const defaultUsers = [
+                { username: 'admin', password: 'admin123', role: 'admin', nama: 'Panitia PPDB' },
+                { username: 'kepsek', password: 'kepsek123', role: 'kepsek', nama: 'Kepala Sekolah' },
+                { username: 'disdik', password: 'disdik123', role: 'disdik', nama: 'Admin Disdik' }
+            ];
+            localStorage.setItem('ppdb_users', JSON.stringify(defaultUsers));
+            localStorage.setItem('ppdb_pendaftar', JSON.stringify([]));
+            localStorage.setItem('ppdb_pengumuman', JSON.stringify({teks:'Belum ada pengumuman.', diterima:[]}));
+            localStorage.setItem('ppdb_informasi', JSON.stringify({jadwal:'1 Mei - 30 Juni 2026', syarat:'Fotokopi KK, Akta, Ijazah SMP, Pas Foto'}));
+        }
+
+        // ==========================================
+        // NAVIGASI & ROUTING
+        // ==========================================
+        function navigate(page, data=null) {
+            currentPage = page;
+            renderSidebar();
+            renderContent(page, data);
+            // Update navbar
+            if(currentUser) {
+                document.getElementById('btnLoginNav').style.display='none';
+                document.getElementById('btnRegNav').style.display='none';
+                document.getElementById('btnLogout').style.display='block';
+            } else {
+                document.getElementById('btnLoginNav').style.display='block';
+                document.getElementById('btnRegNav').style.display='block';
+                document.getElementById('btnLogout').style.display='none';
+            }
+        }
+
+        function renderSidebar() {
+            const menuList = document.getElementById('menuList');
+            let menuHTML = '';
+            
+            if(!currentUser) {
+                // Menu publik
+                menuHTML += `<li class="nav-item"><a class="nav-link ${currentPage==='beranda'?'active':''}" href="#" onclick="navigate('beranda')">🏠 Beranda</a></li>`;
+                menuHTML += `<li class="nav-item"><a class="nav-link ${currentPage==='info'?'active':''}" href="#" onclick="navigate('info')">ℹ️ Info PPDB</a></li>`;
+                menuHTML += `<li class="nav-item"><a class="nav-link" href="#" onclick="navigate('register')">📝 Registrasi Akun</a></li>`;
+                menuHTML += `<li class="nav-item"><a class="nav-link" href="#" onclick="navigate('login')">🔑 Login</a></li>`;
+                menuHTML += `<li class="nav-item"><a class="nav-link ${currentPage==='pengumuman'?'active':''}" href="#" onclick="navigate('pengumuman')">📢 Lihat Pengumuman</a></li>`;
+            } else if(currentUser.role === 'calon_siswa') {
+                // Dashboard siswa
+                menuHTML += `<li class="nav-item"><a class="nav-link ${currentPage==='dashboard'?'active':''}" href="#" onclick="navigate('dashboard')">📋 Dashboard</a></li>`;
+                menuHTML += `<li class="nav-item"><a class="nav-link ${currentPage==='isi_formulir'?'active':''}" href="#" onclick="navigate('isi_formulir')">✍️ Isi Formulir</a></li>`;
+                menuHTML += `<li class="nav-item"><a class="nav-link ${currentPage==='upload_berkas'?'active':''}" href="#" onclick="navigate('upload_berkas')">📎 Upload Berkas</a></li>`;
+                menuHTML += `<li class="nav-item"><a class="nav-link ${currentPage==='cek_status'?'active':''}" href="#" onclick="navigate('cek_status')">🔍 Cek Status</a></li>`;
+                menuHTML += `<li class="nav-item"><a class="nav-link ${currentPage==='cetak_bukti'?'active':''}" href="#" onclick="navigate('cetak_bukti')">🖨️ Cetak Bukti</a></li>`;
+                menuHTML += `<li class="nav-item"><a class="nav-link ${currentPage==='pengumuman'?'active':''}" href="#" onclick="navigate('pengumuman')">📢 Lihat Pengumuman</a></li>`;
+                menuHTML += `<li class="nav-item"><a class="nav-link ${currentPage==='edit_data'?'active':''}" href="#" onclick="navigate('edit_data')">✏️ Edit Data</a></li>`;
+            } else if(currentUser.role === 'admin') {
+                menuHTML += `<li class="nav-item"><a class="nav-link ${currentPage==='admin_dashboard'?'active':''}" href="#" onclick="navigate('admin_dashboard')">📊 Dashboard Admin</a></li>`;
+                menuHTML += `<li class="nav-item"><a class="nav-link ${currentPage==='verifikasi'?'active':''}" href="#" onclick="navigate('verifikasi')">✅ Verifikasi Data</a></li>`;
+                menuHTML += `<li class="nav-item"><a class="nav-link ${currentPage==='kelola_data'?'active':''}" href="#" onclick="navigate('kelola_data')">🗂️ Kelola Data Pendaftar</a></li>`;
+                menuHTML += `<li class="nav-item"><a class="nav-link ${currentPage==='ubah_status'?'active':''}" href="#" onclick="navigate('ubah_status')">🔄 Ubah Status</a></li>`;
+                menuHTML += `<li class="nav-item"><a class="nav-link ${currentPage==='kelola_info'?'active':''}" href="#" onclick="navigate('kelola_info')">📝 Kelola Informasi</a></li>`;
+                menuHTML += `<li class="nav-item"><a class="nav-link ${currentPage==='kelola_pengumuman'?'active':''}" href="#" onclick="navigate('kelola_pengumuman')">📢 Kelola Pengumuman</a></li>`;
+                menuHTML += `<li class="nav-item"><a class="nav-link ${currentPage==='cetak_laporan'?'active':''}" href="#" onclick="navigate('cetak_laporan')">📄 Cetak Laporan</a></li>`;
+            } else if(currentUser.role === 'kepsek') {
+                menuHTML += `<li class="nav-item"><a class="nav-link ${currentPage==='rekap_data'?'active':''}" href="#" onclick="navigate('rekap_data')">📋 Lihat Rekap Data</a></li>`;
+                menuHTML += `<li class="nav-item"><a class="nav-link ${currentPage==='hasil_seleksi'?'active':''}" href="#" onclick="navigate('hasil_seleksi')">🏆 Lihat Hasil Seleksi</a></li>`;
+            } else if(currentUser.role === 'disdik') {
+                menuHTML += `<li class="nav-item"><a class="nav-link ${currentPage==='kelola_sekolah'?'active':''}" href="#" onclick="navigate('kelola_sekolah')">🏫 Kelola Data Sekolah & Kuota</a></li>`;
+            }
+            menuList.innerHTML = menuHTML;
+        }
+
+        // ==========================================
+        // RENDER HALAMAN (CONTENT)
+        // ==========================================
+        function renderContent(page, data) {
+            const contentDiv = document.getElementById('dynamicContent');
+            switch(page) {
+                case 'beranda': contentDiv.innerHTML = halamanBeranda(); break;
+                case 'info': contentDiv.innerHTML = halamanInfo(); break;
+                case 'register': contentDiv.innerHTML = halamanRegister(); break;
+                case 'login': contentDiv.innerHTML = halamanLogin(); break;
+                case 'dashboard': contentDiv.innerHTML = halamanDashboard(); break;
+                case 'isi_formulir': contentDiv.innerHTML = halamanIsiFormulir(); break;
+                case 'upload_berkas': contentDiv.innerHTML = halamanUploadBerkas(); break;
+                case 'cek_status': contentDiv.innerHTML = halamanCekStatus(); break;
+                case 'cetak_bukti': contentDiv.innerHTML = halamanCetakBukti(); break;
+                case 'pengumuman': contentDiv.innerHTML = halamanPengumuman(); break;
+                case 'edit_data': contentDiv.innerHTML = halamanEditData(); break;
+                case 'admin_dashboard': contentDiv.innerHTML = halamanAdminDashboard(); break;
+                case 'verifikasi': contentDiv.innerHTML = halamanVerifikasi(); break;
+                case 'kelola_data': contentDiv.innerHTML = halamanKelolaData(); break;
+                case 'ubah_status': contentDiv.innerHTML = halamanUbahStatus(); break;
+                case 'kelola_info': contentDiv.innerHTML = halamanKelolaInfo(); break;
+                case 'kelola_pengumuman': contentDiv.innerHTML = halamanKelolaPengumuman(); break;
+                case 'cetak_laporan': contentDiv.innerHTML = halamanCetakLaporan(); break;
+                case 'rekap_data': contentDiv.innerHTML = halamanRekapData(); break;
+                case 'hasil_seleksi': contentDiv.innerHTML = halamanHasilSeleksi(); break;
+                case 'kelola_sekolah': contentDiv.innerHTML = halamanKelolaSekolah(); break;
+                default: contentDiv.innerHTML = halamanBeranda();
+            }
+        }
+
+        // ==========================================
+        // HALAMAN PUBLIK
+        // ==========================================
+        function halamanBeranda() {
+            return `
+                <h2>🏫 Selamat Datang di PPDB Online</h2>
+                <p class="lead">SMK Negeri 1 Makassar - Penerimaan Peserta Didik Baru Tahun Ajaran 2026/2027</p>
+                <div class="row mt-4">
+                    <div class="col-md-4"><div class="card card-stat p-3"><h5>📅 Jadwal</h5><p>1 Mei - 30 Juni 2026</p></div></div>
+                    <div class="col-md-4"><div class="card card-stat p-3"><h5>📋 Jalur</h5><p>Zonasi, Prestasi, Afirmasi</p></div></div>
+                    <div class="col-md-4"><div class="card card-stat p-3"><h5>👥 Kuota</h5><p>360 Siswa</p></div></div>
+                </div>
+                <div class="mt-4">
+                    <a class="btn btn-primary btn-lg me-2" onclick="navigate('register')">📝 Registrasi Akun</a>
+                    <a class="btn btn-outline-primary btn-lg" onclick="navigate('info')">ℹ️ Info Lengkap</a>
+                </div>`;
+        }
+
+        function halamanInfo() {
+            const info = JSON.parse(localStorage.getItem('ppdb_informasi'));
+            return `
+                <h2>ℹ️ Informasi PPDB</h2>
+                <div class="alert alert-info">${info.jadwal}</div>
+                <h5>Persyaratan:</h5>
+                <p>${info.syarat}</p>
+                <p>Alur pendaftaran: Registrasi → Isi Formulir → Upload Berkas → Verifikasi → Pengumuman → Daftar Ulang.</p>`;
+        }
+
+        function halamanRegister() {
+            return `
+                <h2>📝 Registrasi Akun Baru</h2>
+                <form onsubmit="event.preventDefault(); registerUser()">
+                    <div class="mb-3"><input type="text" id="regNama" class="form-control" placeholder="Nama Lengkap" required></div>
+                    <div class="mb-3"><input type="email" id="regEmail" class="form-control" placeholder="Email" required></div>
+                    <div class="mb-3"><input type="text" id="regUsername" class="form-control" placeholder="Username" required></div>
+                    <div class="mb-3"><input type="password" id="regPassword" class="form-control" placeholder="Password" required></div>
+                    <button type="submit" class="btn btn-success">Daftar</button>
+                </form>
+                <p class="mt-2">Sudah punya akun? <a href="#" onclick="navigate('login')">Login</a></p>`;
+        }
+
+        function halamanLogin() {
+            return `
+                <h2>🔑 Login</h2>
+                <form onsubmit="event.preventDefault(); loginUser()">
+                    <div class="mb-3"><input type="text" id="loginUsername" class="form-control" placeholder="Username" required></div>
+                    <div class="mb-3"><input type="password" id="loginPassword" class="form-control" placeholder="Password" required></div>
+                    <button type="submit" class="btn btn-primary">Masuk</button>
+                </form>
+                <p class="mt-2">Belum punya akun? <a href="#" onclick="navigate('register')">Daftar</a></p>`;
+        }
+
+        function halamanPengumuman() {
+            const peng = JSON.parse(localStorage.getItem('ppdb_pengumuman'));
+            return `
+                <h2>📢 Pengumuman Hasil Seleksi</h2>
+                <div class="alert alert-warning">${peng.teks}</div>
+                ${peng.diterima.length > 0 ? `<h5>Daftar Diterima:</h5><ul>${peng.diterima.map(n=>`<li>${n}</li>`).join('')}</ul>` : ''}`;
+        }
+
+        // ==========================================
+        // HALAMAN SISWA (setelah login sebagai calon siswa)
+        // ==========================================
+        function halamanDashboard() {
+            const siswa = currentUser.data;
+            return `
+                <h2>📋 Dashboard Pendaftaran</h2>
+                <p>Selamat datang, <strong>${siswa.nama}</strong>.</p>
+                <p>Status Pendaftaran: <span class="badge bg-${siswa.status==='Diterima'?'success':siswa.status==='Ditolak'?'danger':'warning'} status-badge">${siswa.status || 'Menunggu Verifikasi'}</span></p>
+                <div class="d-flex flex-wrap gap-2 mt-3">
+                    <button class="btn btn-primary" onclick="navigate('isi_formulir')">✍️ Isi Formulir</button>
+                    <button class="btn btn-success" onclick="navigate('upload_berkas')">📎 Upload Berkas</button>
+                    <button class="btn btn-info" onclick="navigate('cek_status')">🔍 Cek Status</button>
+                    <button class="btn btn-warning" onclick="navigate('cetak_bukti')">🖨️ Cetak Bukti</button>
+                    <button class="btn btn-secondary" onclick="navigate('edit_data')">✏️ Edit Data</button>
+                </div>`;
+        }
+
+        function halamanIsiFormulir() {
+            const siswa = currentUser.data;
+            return `
+                <h2>✍️ Isi Formulir Pendaftaran</h2>
+                <form onsubmit="event.preventDefault(); simpanFormulir()">
+                    <div class="mb-3"><label>NISN</label><input type="text" id="nisn" class="form-control" value="${siswa.nisn||''}"></div>
+                    <div class="mb-3"><label>Asal SMP</label><input type="text" id="asalSMP" class="form-control" value="${siswa.asalSMP||''}"></div>
+                    <div class="mb-3"><label>Jalur Pilihan</label><select id="jalur" class="form-select"><option>Zonasi</option><option>Prestasi</option><option>Afirmasi</option></select></div>
+                    <button type="submit" class="btn btn-primary">💾 Simpan Data</button>
+                </form>`;
+        }
+
+        function halamanUploadBerkas() {
+            const siswa = currentUser.data;
+            return `
+                <h2>📎 Upload Berkas Persyaratan</h2>
+                <p>Dokumen yang sudah diupload: ${siswa.berkas ? siswa.berkas.join(', ') : 'Belum ada'}</p>
+                <input type="file" id="berkasInput" class="form-control mb-2">
+                <button class="btn btn-success" onclick="uploadBerkas()">📤 Upload Berkas</button>`;
+        }
+
+        function halamanCekStatus() {
+            const siswa = currentUser.data;
+            return `
+                <h2>🔍 Status Pendaftaran</h2>
+                <p>Status saat ini: <strong>${siswa.status || 'Menunggu Verifikasi'}</strong></p>`;
+        }
+
+        function halamanCetakBukti() {
+            const siswa = currentUser.data;
+            return `
+                <div id="areaCetak">
+                    <h2>🖨️ Bukti Pendaftaran</h2>
+                    <p>Nama: ${siswa.nama}</p>
+                    <p>Username: ${currentUser.username}</p>
+                    <p>Status: ${siswa.status || 'Menunggu Verifikasi'}</p>
+                </div>
+                <button class="btn btn-warning no-print" onclick="window.print()">🖨️ Cetak</button>`;
+        }
+
+        function halamanEditData() {
+            const siswa = currentUser.data;
+            return `
+                <h2>✏️ Edit Data Diri</h2>
+                <form onsubmit="event.preventDefault(); updateDataDiri()">
+                    <div class="mb-3"><input type="text" id="editNama" class="form-control" value="${siswa.nama}"></div>
+                    <button type="submit" class="btn btn-primary">Simpan Perubahan</button>
+                </form>`;
+        }
+
+        // ==========================================
+        // HALAMAN ADMIN
+        // ==========================================
+        function halamanAdminDashboard() {
+            const pendaftar = JSON.parse(localStorage.getItem('ppdb_pendaftar'));
+            return `
+                <h2>📊 Dashboard Admin</h2>
+                <p>Total pendaftar: ${pendaftar.length}</p>
+                <p>Menunggu verifikasi: ${pendaftar.filter(p=>p.status==='Menunggu Verifikasi').length}</p>`;
+        }
+
+        function halamanVerifikasi() {
+            const pendaftar = JSON.parse(localStorage.getItem('ppdb_pendaftar'));
+            let rows = pendaftar.map((p, idx) => `
+                <tr>
+                    <td>${p.username}</td><td>${p.nama}</td><td>${p.status}</td>
+                    <td>
+                        <button class="btn btn-sm btn-success" onclick="verifikasi('${p.username}','Diterima')">✅ Terima</button>
+                        <button class="btn btn-sm btn-danger" onclick="verifikasi('${p.username}','Ditolak')">❌ Tolak</button>
+                    </td>
+                </tr>`).join('');
+            return `
+                <h2>✅ Verifikasi Data Pendaftar</h2>
+                <table class="table table-bordered table-verifikasi"><thead><tr><th>Username</th><th>Nama</th><th>Status</th><th>Aksi</th></tr></thead><tbody>${rows}</tbody></table>`;
+        }
+
+        function halamanKelolaData() {
+            const pendaftar = JSON.parse(localStorage.getItem('ppdb_pendaftar'));
+            let list = pendaftar.map(p => `<li>${p.username} - ${p.nama} (${p.status})</li>`).join('');
+            return `<h2>🗂️ Kelola Data Pendaftar</h2><ul>${list}</ul>`;
+        }
+
+        function halamanUbahStatus() {
+            return halamanVerifikasi(); // sama
+        }
+
+        function halamanKelolaInfo() {
+            const info = JSON.parse(localStorage.getItem('ppdb_informasi'));
+            return `
+                <h2>📝 Kelola Informasi PPDB</h2>
+                <form onsubmit="event.preventDefault(); simpanInfo()">
+                    <div class="mb-3"><label>Jadwal</label><input type="text" id="infoJadwal" class="form-control" value="${info.jadwal}"></div>
+                    <div class="mb-3"><label>Syarat</label><textarea id="infoSyarat" class="form-control">${info.syarat}</textarea></div>
+                    <button type="submit" class="btn btn-primary">Simpan</button>
+                </form>`;
+        }
+
+        function halamanKelolaPengumuman() {
+            const peng = JSON.parse(localStorage.getItem('ppdb_pengumuman'));
+            return `
+                <h2>📢 Kelola Pengumuman</h2>
+                <form onsubmit="event.preventDefault(); simpanPengumuman()">
+                    <div class="mb-3"><textarea id="teksPengumuman" class="form-control">${peng.teks}</textarea></div>
+                    <button type="submit" class="btn btn-danger">Publikasikan</button>
+                </form>`;
+        }
+
+        function halamanCetakLaporan() {
+            const pendaftar = JSON.parse(localStorage.getItem('ppdb_pendaftar'));
+            return `<div id="laporan"><h2>📄 Laporan Pendaftaran</h2><p>Jumlah: ${pendaftar.length}</p><ul>${pendaftar.map(p=>`<li>${p.nama} - ${p.status}</li>`).join('')}</ul></div><button class="btn btn-secondary" onclick="window.print()">Cetak</button>`;
+        }
+
+        function halamanRekapData() {
+            const pendaftar = JSON.parse(localStorage.getItem('ppdb_pendaftar'));
+            return `<h2>📋 Rekap Data</h2><p>Total: ${pendaftar.length}</p>`;
+        }
+
+        function halamanHasilSeleksi() {
+            const peng = JSON.parse(localStorage.getItem('ppdb_pengumuman'));
+            return `<h2>🏆 Hasil Seleksi</h2><p>${peng.teks}</p>`;
+        }
+
+        function halamanKelolaSekolah() {
+            return `<h2>🏫 Kelola Data Sekolah & Kuota (Simulasi)</h2><p>Fitur ini untuk Admin Disdik.</p>`;
+        }
+
+        // ==========================================
+        // FUNGSI BISNIS
+        // ==========================================
+        function registerUser() {
+            const nama = document.getElementById('regNama').value;
+            const email = document.getElementById('regEmail').value;
+            const username = document.getElementById('regUsername').value;
+            const password = document.getElementById('regPassword').value;
+            let users = JSON.parse(localStorage.getItem('ppdb_users'));
+            if(users.find(u=>u.username===username)) return alert('Username sudah ada!');
+            users.push({username, password, role:'calon_siswa', nama, email});
+            localStorage.setItem('ppdb_users', JSON.stringify(users));
+            // buat data pendaftar
+            let pendaftar = JSON.parse(localStorage.getItem('ppdb_pendaftar'));
+            pendaftar.push({username, nama, nisn:'', asalSMP:'', jalur:'Zonasi', berkas:[], status:'Menunggu Verifikasi'});
+            localStorage.setItem('ppdb_pendaftar', JSON.stringify(pendaftar));
+            alert('Registrasi berhasil, silakan login.');
+            navigate('login');
+        }
+
+        function loginUser() {
+            const username = document.getElementById('loginUsername').value;
+            const password = document.getElementById('loginPassword').value;
+            const users = JSON.parse(localStorage.getItem('ppdb_users'));
+            const user = users.find(u=>u.username===username && u.password===password);
+            if(!user) return alert('Login gagal!');
+            currentUser = { username: user.username, role: user.role, nama: user.nama };
+            if(user.role === 'calon_siswa') {
+                const pendaftar = JSON.parse(localStorage.getItem('ppdb_pendaftar'));
+                const data = pendaftar.find(p=>p.username===username);
+                currentUser.data = data;
+            }
+            navigate('dashboard'); // akan diarahkan sesuai role di renderSidebar nanti
+            // Untuk admin, arahkan ke admin_dashboard
+            if(user.role === 'admin') navigate('admin_dashboard');
+            else if(user.role === 'kepsek') navigate('rekap_data');
+            else if(user.role === 'disdik') navigate('kelola_sekolah');
+            else navigate('dashboard');
+        }
+
+        function logout() {
+            currentUser = null;
+            navigate('beranda');
+        }
+
+        function simpanFormulir() {
+            const nisn = document.getElementById('nisn').value;
+            const asalSMP = document.getElementById('asalSMP').value;
+            const jalur = document.getElementById('jalur').value;
+            let pendaftar = JSON.parse(localStorage.getItem('ppdb_pendaftar'));
+            const idx = pendaftar.findIndex(p=>p.username===currentUser.username);
+            pendaftar[idx].nisn = nisn;
+            pendaftar[idx].asalSMP = asalSMP;
+            pendaftar[idx].jalur = jalur;
+            localStorage.setItem('ppdb_pendaftar', JSON.stringify(pendaftar));
+            currentUser.data = pendaftar[idx];
+            alert('Data tersimpan!');
+            navigate('dashboard');
+        }
+
+        function uploadBerkas() {
+            const fileInput = document.getElementById('berkasInput');
+            if(fileInput.files.length===0) return alert('Pilih file!');
+            const fileName = fileInput.files[0].name;
+            let pendaftar = JSON.parse(localStorage.getItem('ppdb_pendaftar'));
+            const idx = pendaftar.findIndex(p=>p.username===currentUser.username);
+            pendaftar[idx].berkas.push(fileName);
+            localStorage.setItem('ppdb_pendaftar', JSON.stringify(pendaftar));
+            currentUser.data = pendaftar[idx];
+            alert('Berkas berhasil diupload!');
+            navigate('upload_berkas');
+        }
+
+        function updateDataDiri() {
+            const namaBaru = document.getElementById('editNama').value;
+            let pendaftar = JSON.parse(localStorage.getItem('ppdb_pendaftar'));
+            const idx = pendaftar.findIndex(p=>p.username===currentUser.username);
+            pendaftar[idx].nama = namaBaru;
+            localStorage.setItem('ppdb_pendaftar', JSON.stringify(pendaftar));
+            currentUser.data = pendaftar[idx];
+            alert('Data diubah.');
+            navigate('dashboard');
+        }
+
+        function verifikasi(username, status) {
+            let pendaftar = JSON.parse(localStorage.getItem('ppdb_pendaftar'));
+            const idx = pendaftar.findIndex(p=>p.username===username);
+            pendaftar[idx].status = status;
+            localStorage.setItem('ppdb_pendaftar', JSON.stringify(pendaftar));
+            navigate('verifikasi');
+        }
+
+        function simpanInfo() {
+            const info = {
+                jadwal: document.getElementById('infoJadwal').value,
+                syarat: document.getElementById('infoSyarat').value
+            };
+            localStorage.setItem('ppdb_informasi', JSON.stringify(info));
+            alert('Informasi diperbarui.');
+        }
+
+        function simpanPengumuman() {
+            const teks = document.getElementById('teksPengumuman').value;
+            let peng = JSON.parse(localStorage.getItem('ppdb_pengumuman'));
+            peng.teks = teks;
+            // Ambil pendaftar diterima
+            const pendaftar = JSON.parse(localStorage.getItem('ppdb_pendaftar'));
+            peng.diterima = pendaftar.filter(p=>p.status==='Diterima').map(p=>p.nama);
+            localStorage.setItem('ppdb_pengumuman', JSON.stringify(peng));
+            alert('Pengumuman dipublikasikan.');
+        }
+
+        // ==========================================
+        // INIT
+        // ==========================================
+        navigate('beranda');
+    </script>
+</body>
+</html>
